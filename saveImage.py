@@ -55,34 +55,44 @@ class CmdHandler:
 
     @staticmethod
     def __run(command: str | list[str]):
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
-        return result.stdout.strip(), result.stderr.strip()
+        try:
+            result = subprocess.run(command, shell=True, capture_output=True, text=True)
+            return result.stdout.strip(), result.stderr.strip()
+        except Exception as e:  
+            print(f"\033[31mError executing command '{command}': {e}\033[0m")
+            return "", str(e)
 
     @staticmethod
     def get_local_image_info():
-        if platform.system() == "Windows":
-            out, err = CmdHandler.__run("docker images")
-        elif platform.system() == "Linux":
-            out, err = CmdHandler.__run("sudo docker images")
+        try:
+            if platform.system() == "Windows":
+                out, err = CmdHandler.__run("docker images")
+            elif platform.system() == "Linux":
+                out, err = CmdHandler.__run("sudo docker images")
+            else:
+                print(f"\033[31mUnsupported operating system: {platform.system()}\033[0m")
+                return []
 
-        if err:
-            print(f"\033[31mError fetching images: {err}\033[0m")
-        else:
+            if err:
+                print(f"\033[31mError fetching images: {err}\033[0m")
+                return []
+        
             print(out)
             info_lst: list = []
             for line in out.splitlines()[1:]:
-                line_lst: list = []
                 cols = line.split()
                 if len(cols) >= 4:   
                     repository = cols[0]  
                     tag = cols[1]   
                     image_id = cols[2]  
                     size = cols[-1]       
-                line_lst.append((repository, tag, image_id, size))
-                info_lst.extend(line_lst)
+                    info_lst.append((repository, tag, image_id, size))
 
             return info_lst
-
+        
+        except Exception as e:
+            print(f"\033[31mError processing image info: {e}\033[0m")
+            return []
 
     @staticmethod
     def update_info_to_db():
@@ -113,3 +123,4 @@ if __name__ == "__main__":
     # Database.close_connection()
 
     l = CmdHandler.get_local_image_info()
+    print(l)
