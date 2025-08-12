@@ -4,12 +4,72 @@ from pymysql import Connection
 import platform
 from dotenv import load_dotenv
 import os
-
+from abc import ABC, abstractmethod
 
 load_dotenv()
 
-class Database:
+class Db_Interface(ABC):
+
+    @staticmethod
+    @abstractmethod
+    def init_connection():
+        # Initialize the database connection
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def sql_sentence_commit(sentence: str, params=None):
+        # Execute a SQL statement with commit
+        pass
  
+    @staticmethod
+    @abstractmethod
+    def close_connection():
+        # Close the database connection
+        pass
+
+
+class Cmd_interface(ABC):
+    @staticmethod
+    @abstractmethod
+    def __run(command: str | list[str]):
+        # Run a shell command
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def get_local_image_info():
+        # Get information about local Docker images
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def update_info_to_db():
+        # Update Docker image information in the database
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def get_db_image_info():
+        # Get information about Docker images from the database
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def pull_images_from_database():
+        # Pull all Docker images from the database information
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def export_image_tar():
+        # Export all Docker image to each tar file
+        pass
+
+##############################################################################
+
+class Database(Db_Interface):
+
     @staticmethod
     def init_connection():
         try:
@@ -51,7 +111,7 @@ class Database:
             raise
 
 
-class CmdHandler:
+class CmdHandler(Cmd_interface):
 
     @staticmethod
     def __run(command: str | list[str]):
@@ -96,31 +156,91 @@ class CmdHandler:
 
     @staticmethod
     def update_info_to_db():
-        pass
-
-    @classmethod
-    def pull_images_from_database():
-        pass
+        try:
+            Database.init_connection()
+            images = CmdHandler.get_local_image_info()
+            for item in images:
+                Database.sql_sentence_commit("INSERT INTO images (repository, tag, hash, size) VALUES (%s, %s, %s, %s)", item)
+            Database.close_connection()
+            print("\033[32mDatabase updated successfully.\033[0m")
+        except Exception as e:
+            print(f"\033[31mError updating database: {e}\033[0m")
 
     @staticmethod
-    def export_image_tar():
-        pass
+    def get_db_image_info():
+        try:
+            Database.init_connection()
+            
+            with Database.con.cursor() as cursor:
+                cursor.execute("SELECT repository, tag, hash, size FROM images")
+                results = cursor.fetchall()   
+                
+            Database.close_connection()
+            print(list(results))
+            return list(results)
+
+        except Exception as e:
+            print(f"\033[31mError fetching images from database: {e}\033[0m")
+            return []
+
+    @staticmethod
+    def pull_images_from_database():
+        try:
+            Database.init_connection()
+            images = CmdHandler.get_db_image_info()
+
+            if platform.system() == "Windows":
+                out, err = CmdHandler.__run("docker pull " + " ".join([f"{repo}:{tag}" for repo, tag, _, _ in images]))
+            elif platform.system() == "Linux":
+                out, err = CmdHandler.__run("sudo docker pull " + " ".join([f"{repo}:{tag}" for repo, tag, _, _ in images]))
+            else:
+                print(f"\033[31mUnsupported operating system: {platform.system()}\033[0m")
+            
+            if err:
+                print(f"\033[31mError pulling images: {err}\033[0m")
+
+            print(f"\033[34m{out}\033[0m")
+        except Exception as e:
+            print(f"\033[31mError pulling images: {e}\033[0m")
+
+    @staticmethod
+    def export_local_image_tar(output_dir: str = "./exports"):
+        try:
+            # 确保输出目录存在
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+            
+            images = CmdHandler.get_local_image_info()
+            if not images:
+                print("\033[33mNo images found to export.\033[0m")
+                return
+            
+            for repo, tag, _, _ in images:
+                # 生成文件名：镜像名_标签.tar
+                filename = f"{repo}_{tag}.tar"
+                output_path = Path(output_dir) / filename
+                
+                if platform.system() == "Windows":
+                    command = f"docker save -o {output_path} {repo}:{tag}"
+                elif platform.system() == "Linux":
+                    command = f"sudo docker save -o {output_path} {repo}:{tag}"
+                else:
+                    print(f"\033[31mUnsupported operating system: {platform.system()}\033[0m")
+                    return
+                    
+                out, err = CmdHandler.__run(command)
+                
+                if err:
+                    print(f"\033[31mError exporting {repo}:{tag}: {err}\033[0m")
+                else:
+                    print(f"\033[32mExported {repo}:{tag} to: {output_path}\033[0m")
+
+                print(f"\033[34m{out}\033[0m")
+
+            print("\033[32mAll images exported successfully.\033[0m")
+        except Exception as e:
+            print(f"\033[31mError exporting images: {e}\033[0m")
 
 
 if __name__ == "__main__": 
-    # Database.init_connection()
-
-    # Database.sql_sentence_commit("""
-    #         CREATE TABLE IF NOT EXISTS images (
-    #             id INT PRIMARY KEY AUTO_INCREMENT,
-    #             repository VARCHAR(255) NOT NULL,
-    #             tag VARCHAR(100) NOT NULL,
-    #             hash VARCHAR(100) NOT NULL,
-    #             size VARCHAR(50) NOT NULL
-    #         );
-    # """)
- 
-    # Database.close_connection()
-
-    l = CmdHandler.get_local_image_info()
-    print(l)
+    
+    pass
