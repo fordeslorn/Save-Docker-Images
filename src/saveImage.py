@@ -4,6 +4,7 @@ from pymysql import Connection
 import platform
 from dotenv import load_dotenv
 import os
+import json
 from abc import ABC, abstractmethod
 
 load_dotenv()
@@ -38,7 +39,7 @@ class Cmd_interface(ABC):
 
     @staticmethod
     @abstractmethod
-    def get_local_image_info():
+    def get_local_image_info(if_print: bool):
         # Get information about local Docker images
         pass
 
@@ -56,13 +57,25 @@ class Cmd_interface(ABC):
 
     @staticmethod
     @abstractmethod
+    def get_file_image_info(filepath: str):
+        # Get imformation from a images.json file
+        pass
+
+    @staticmethod
+    @abstractmethod
     def pull_images_from_database():
         # Pull all Docker images from the database information
         pass
 
     @staticmethod
     @abstractmethod
-    def export_image_tar():
+    def export_local_image_file():
+        # Export all Docker image simple info to a images.json file
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def export_local_image_tar():
         # Export all Docker image to each tar file
         pass
 
@@ -123,7 +136,7 @@ class CmdHandler(Cmd_interface):
             return "", str(e)
 
     @staticmethod
-    def get_local_image_info():
+    def get_local_image_info(if_print: bool = True):
         try:
             if platform.system() == "Windows":
                 out, err = CmdHandler.__run("docker images")
@@ -136,8 +149,10 @@ class CmdHandler(Cmd_interface):
             if err:
                 print(f"\033[31mError fetching images: {err}\033[0m")
                 return []
-        
-            print(out)
+
+            if if_print:
+                print(out)
+
             info_lst: list = []
             for line in out.splitlines()[1:]:
                 cols = line.split()
@@ -158,7 +173,7 @@ class CmdHandler(Cmd_interface):
     def update_info_to_db():
         try:
             Database.init_connection()
-            images = CmdHandler.get_local_image_info()
+            images = CmdHandler.get_local_image_info(if_print=False)
             for item in images:
                 Database.sql_sentence_commit("INSERT INTO images (repository, tag, hash, size) VALUES (%s, %s, %s, %s)", item)
             Database.close_connection()
@@ -184,6 +199,22 @@ class CmdHandler(Cmd_interface):
             return []
 
     @staticmethod
+    def get_file_image_info(filepath: str):
+        try:
+            p = Path(filepath)
+
+            if not p.exists():
+                print("\033[31mError to find the \"images.json\" file\033[0m")
+
+            with p.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            info_lst = [(item["repo"], item["tag"], item["hash"], item["size"]) for item in data]
+            return info_lst
+        
+        except Exception as e:
+            print(f"\033[31mError getting images info: {e}\033[0m")
+
+    @staticmethod
     def pull_images_from_database():
         try:
             Database.init_connection()
@@ -204,9 +235,25 @@ class CmdHandler(Cmd_interface):
             print(f"\033[31mError pulling images: {e}\033[0m")
 
     @staticmethod
+    def export_local_image_file():
+        try:
+            jsonfile = Path(__file__).parent / "images.json"
+            if not jsonfile.exists():
+                jsonfile.touch()
+
+            info_lst = CmdHandler.get_local_image_info(if_print=False)
+            dict_lst = [{"repo":item[0], "tag":item[1], "hash":item[2], "size":item[3]} for item in info_lst] 
+            json_str = json.dumps(dict_lst, indent=2)
+            with jsonfile.open("w", encoding="utf-8") as f:
+                f.write(json_str)
+            print(f"\033[32mImage file exported successfully to path:\033[34m[{jsonfile}]\033[0m")
+        except Exception as e:
+            print(f"\033[31mError export images file: {e}\033[0m")
+
+    @staticmethod
     def export_local_image_tar(output_dir: str = "./exports"):
         try:
-            # 确保输出目录存在
+            # ensure export directory exist
             Path(output_dir).mkdir(parents=True, exist_ok=True)
             
             images = CmdHandler.get_local_image_info()
@@ -215,7 +262,6 @@ class CmdHandler(Cmd_interface):
                 return
             
             for repo, tag, _, _ in images:
-                # 生成文件名：镜像名_标签.tar
                 filename = f"{repo}_{tag}.tar"
                 output_path = Path(output_dir) / filename
                 
@@ -242,5 +288,5 @@ class CmdHandler(Cmd_interface):
 
 
 if __name__ == "__main__": 
-    
+
     pass
