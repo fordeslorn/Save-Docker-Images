@@ -136,7 +136,7 @@ class CmdHandler(Cmd_interface):
             return "", str(e)
 
     @staticmethod
-    def get_local_image_info(if_print: bool = True):
+    def get_local_image_info(if_print: bool = True) -> list[tuple]:
         try:
             if platform.system() == "Windows":
                 out, err = CmdHandler.__run("docker images")
@@ -182,7 +182,7 @@ class CmdHandler(Cmd_interface):
             print(f"\033[31mError updating database: {e}\033[0m")
 
     @staticmethod
-    def get_db_image_info():
+    def get_db_image_info() -> list[tuple]:
         try:
             Database.init_connection()
             
@@ -198,7 +198,7 @@ class CmdHandler(Cmd_interface):
             return []
 
     @staticmethod
-    def get_file_image_info(filepath: str):
+    def get_file_image_info(filepath: str) -> list[tuple]:
         try:
             p = Path(filepath)
 
