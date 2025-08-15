@@ -150,9 +150,6 @@ class CmdHandler(Cmd_interface):
                 print(f"\033[31mError fetching images: {err}\033[0m")
                 return []
 
-            if if_print:
-                print(out)
-
             info_lst: list = []
             for line in out.splitlines()[1:]:
                 cols = line.split()
@@ -162,6 +159,10 @@ class CmdHandler(Cmd_interface):
                     image_id = cols[2]  
                     size = cols[-1]       
                     info_lst.append((repository, tag, image_id, size))
+
+            if if_print:
+                for item in info_lst:
+                    print(f"\033[36mFound image locally: {item[0]}:{item[1]} ({item[3]})\033[0m")
 
             return info_lst
         
@@ -182,7 +183,7 @@ class CmdHandler(Cmd_interface):
             print(f"\033[31mError updating database: {e}\033[0m")
 
     @staticmethod
-    def get_db_image_info() -> list[tuple]:
+    def get_db_image_info(is_print: bool = True) -> list[tuple]:
         try:
             Database.init_connection()
             
@@ -191,6 +192,11 @@ class CmdHandler(Cmd_interface):
                 results = cursor.fetchall()   
                 
             Database.close_connection()
+
+            if is_print:
+                for row in results:
+                    print(f"\033[36mFound image in DB: {row[0]}:{row[1]} ({row[3]})\033[0m")
+
             return list(results)
 
         except Exception as e:
@@ -198,7 +204,7 @@ class CmdHandler(Cmd_interface):
             return []
 
     @staticmethod
-    def get_file_image_info(filepath: str) -> list[tuple]:
+    def get_file_image_info(filepath: str, is_print: bool = True) -> list[tuple]:
         try:
             p = Path(filepath)
 
@@ -208,6 +214,11 @@ class CmdHandler(Cmd_interface):
             with p.open("r", encoding="utf-8") as f:
                 data = json.load(f)
             info_lst = [(item["repo"], item["tag"], item["hash"], item["size"]) for item in data]
+
+            if is_print:
+                for item in info_lst:
+                    print(f"\033[36mFound image in file: {item[0]}:{item[1]} ({item[3]})\033[0m")
+
             return info_lst
         
         except Exception as e:
@@ -271,36 +282,51 @@ class CmdHandler(Cmd_interface):
     @staticmethod
     def export_local_image_tar(output_dir: str = "./exports"):
         try:
-            # ensure export directory exist
-            Path(output_dir).mkdir(parents=True, exist_ok=True)
+            # Ensure export directory exists
+            export_path = Path(output_dir)
+            export_path.mkdir(parents=True, exist_ok=True)
             
-            images = CmdHandler.get_local_image_info()
+            images = CmdHandler.get_local_image_info(if_print=False)
             if not images:
                 print("\033[33mNo images found to export.\033[0m")
                 return
             
-            for repo, tag, _, _ in images:
-                filename = f"{repo}_{tag}.tar"
-                output_path = Path(output_dir) / filename
+            print(f"\033[36mFound {len(images)} images to export...\033[0m")
+            
+            for i, (repo, tag, image_id, size) in enumerate(images, 1):
+                # 处理文件名中的特殊字符
+                safe_repo = repo.replace("/", "_").replace(":", "_")
+                safe_tag = tag.replace("/", "_").replace(":", "_")
+                filename = f"{safe_repo}_{safe_tag}.tar"
+                output_file = export_path / filename
                 
+                print(f"\033[34m[{i}/{len(images)}] Exporting {repo}:{tag} ({size})...\033[0m")
+                
+                # 构建命令
                 if platform.system() == "Windows":
-                    command = f"docker save -o {output_path} {repo}:{tag}"
+                    command = f'docker save -o "{output_file}" {repo}:{tag}'
                 elif platform.system() == "Linux":
-                    command = f"sudo docker save -o {output_path} {repo}:{tag}"
+                    command = f'sudo docker save -o "{output_file}" {repo}:{tag}'
                 else:
                     print(f"\033[31mUnsupported operating system: {platform.system()}\033[0m")
                     return
-                    
+                
+                # 执行导出命令
                 out, err = CmdHandler.__run(command)
                 
                 if err:
-                    print(f"\033[31mError exporting {repo}:{tag}: {err}\033[0m")
+                    print(f"\033[31m✗ Error exporting {repo}:{tag}: {err}\033[0m")
                 else:
-                    print(f"\033[32mExported {repo}:{tag} to: {output_path}\033[0m")
-
-                print(f"\033[34m{out}\033[0m")
-
-            print("\033[32mAll images exported successfully.\033[0m")
+                    # 检查文件是否成功创建
+                    if output_file.exists():
+                        file_size = output_file.stat().st_size
+                        file_size_mb = file_size / (1024 * 1024)
+                        print(f"\033[32m✓ Exported {repo}:{tag} to: {output_file} ({file_size_mb:.1f} MB)\033[0m")
+                    else:
+                        print(f"\033[31m✗ Failed to create {output_file}\033[0m")
+            
+            print(f"\033[32mExport completed! Files saved to: {export_path.absolute()}\033[0m")
+            
         except Exception as e:
             print(f"\033[31mError exporting images: {e}\033[0m")
 
