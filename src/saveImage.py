@@ -191,7 +191,6 @@ class CmdHandler(Cmd_interface):
                 results = cursor.fetchall()   
                 
             Database.close_connection()
-            print(list(results))
             return list(results)
 
         except Exception as e:
@@ -218,19 +217,38 @@ class CmdHandler(Cmd_interface):
     def pull_images_from_database():
         try:
             Database.init_connection()
-            images = CmdHandler.get_db_image_info()
-
-            if platform.system() == "Windows":
-                out, err = CmdHandler.__run("docker pull " + " ".join([f"{repo}:{tag}" for repo, tag, _, _ in images]))
-            elif platform.system() == "Linux":
-                out, err = CmdHandler.__run("sudo docker pull " + " ".join([f"{repo}:{tag}" for repo, tag, _, _ in images]))
-            else:
-                print(f"\033[31mUnsupported operating system: {platform.system()}\033[0m")
+            db_images = CmdHandler.get_db_image_info()
+            local_images = CmdHandler.get_local_image_info(if_print=False)
             
-            if err:
-                print(f"\033[31mError pulling images: {err}\033[0m")
+            # 创建本地镜像的集合，格式为 (repository, tag)
+            local_image_set = {(item[0], item[1]) for item in local_images}
 
-            print(f"\033[34m{out}\033[0m")
+            for item in db_images:
+                repo, tag = item[0], item[1]
+                
+                # 检查本地是否已有此镜像
+                if (repo, tag) in local_image_set:
+                    print(f"\033[36m{repo}:{tag} already exists locally\033[0m")
+                    continue
+                    
+                # 拉取镜像
+                if platform.system() == "Windows":
+                    cmd = f"docker pull {repo}:{tag}"
+                elif platform.system() == "Linux":
+                    cmd = f"sudo docker pull {repo}:{tag}"
+                else:
+                    print(f"\033[31mUnsupported operating system: {platform.system()}\033[0m")
+                    return
+                    
+                print(f"\033[34mPulling {repo}:{tag}...\033[0m")
+                out, err = CmdHandler.__run(cmd)
+                
+                if err:
+                    print(f"\033[31mError pulling {repo}:{tag}: {err}\033[0m")
+                else:
+                    print(f"\033[32mSuccessfully pulled {repo}:{tag}\033[0m")
+                    
+            Database.close_connection()
         except Exception as e:
             print(f"\033[31mError pulling images: {e}\033[0m")
 
@@ -288,5 +306,4 @@ class CmdHandler(Cmd_interface):
 
 
 if __name__ == "__main__": 
-
     pass
